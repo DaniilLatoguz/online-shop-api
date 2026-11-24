@@ -39,6 +39,16 @@ class BusinessRuleViolationError(AppError):
     code = "business_rule_violation"
 
 
+# --------------------------------------------------------------------------- not found
+
+
+class UserNotFoundError(NotFoundError):
+    code = "user_not_found"
+
+    def __init__(self, user_id: int) -> None:
+        super().__init__(f"User with id {user_id} was not found.", context={"user_id": user_id})
+
+
 # --------------------------------------------------------------------------- business rules
 
 
