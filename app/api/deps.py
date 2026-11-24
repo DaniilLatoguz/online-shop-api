@@ -2,12 +2,13 @@
 
 from typing import Annotated
 
-from fastapi import Depends, Path
+from fastapi import Depends, Header, Path
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.constants import PG_INT_MAX
 from app.db.session import get_session
-from app.services import ProductService, UserService
+from app.models import User
+from app.services import CartService, ProductService, UserService
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
@@ -24,8 +25,35 @@ async def get_product_service(session: SessionDep) -> ProductService:
     return ProductService(session)
 
 
+async def get_cart_service(session: SessionDep) -> CartService:
+    return CartService(session)
+
+
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 ProductServiceDep = Annotated[ProductService, Depends(get_product_service)]
+CartServiceDep = Annotated[CartService, Depends(get_cart_service)]
+
+
+async def get_current_user(
+    user_id: Annotated[
+        int,
+        Header(
+            alias="X-User-Id",
+            gt=0,
+            le=PG_INT_MAX,
+            description="Id of the user making the request (stands in for authentication).",
+        ),
+    ],
+    users: UserServiceDep,
+) -> User:
+    """Resolve the current user from the `X-User-Id` header.
+
+    Missing or malformed header -> 422 (request validation); unknown user -> 404.
+    """
+    return await users.get(user_id)
+
+
+CurrentUserDep = Annotated[User, Depends(get_current_user)]
 
 # Ids must fit PostgreSQL INTEGER: a larger value would otherwise reach the database and fail.
 UserIdPath = Annotated[int, Path(gt=0, le=PG_INT_MAX, description="User id.")]

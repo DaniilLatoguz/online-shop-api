@@ -3,8 +3,16 @@
 from typing import Any
 
 from httpx import AsyncClient, Response
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine
+
+from app.core.constants import MAX_ITEM_QUANTITY
 
 PROBLEM_JSON = "application/problem+json"
+
+
+def as_user(user_id: int) -> dict[str, str]:
+    return {"X-User-Id": str(user_id)}
 
 
 def json_of(response: Response) -> dict[str, Any]:
@@ -45,7 +53,55 @@ async def create_product(
     return json_of(response)
 
 
+async def add_to_cart(
+    client: AsyncClient, user_id: int, product_id: int, quantity: int = 1
+) -> Response:
+    return await client.post(
+        "/cart/items",
+        json={"product_id": product_id, "quantity": quantity},
+        headers=as_user(user_id),
+    )
+
+
+async def get_cart(client: AsyncClient, user_id: int) -> dict[str, Any]:
+    response = await client.get("/cart", headers=as_user(user_id))
+    assert response.status_code == 200, response.text
+    return json_of(response)
+
+
 async def get_product(client: AsyncClient, product_id: int) -> dict[str, Any]:
     response = await client.get(f"/products/{product_id}")
     assert response.status_code == 200, response.text
     return json_of(response)
+
+
+async def fill_cart(
+    engine: AsyncEngine, user_id: int, *, lines: int, quantity: int = 1, price: str = "1.00"
+) -> list[int]:
+    """Create `lines` products (each with stock for a full cart line), put each into the user's
+    cart and return their ids.
+
+    Bulk setup goes through SQL: hundreds of API calls would only slow the suite down.
+    """
+    async with engine.begin() as connection:
+        result = await connection.execute(
+            text(
+                "WITH created AS ("
+                "  INSERT INTO products (name, price, stock)"
+                "  SELECT 'Bulk product ' || n, CAST(:price AS NUMERIC), :stock"
+                "  FROM generate_series(1, :lines) AS n"
+                "  RETURNING id"
+                ") "
+                "INSERT INTO cart_items (user_id, product_id, quantity) "
+                "SELECT :user_id, id, :quantity FROM created "
+                "RETURNING product_id"
+            ),
+            {
+                "price": price,
+                "stock": MAX_ITEM_QUANTITY,
+                "lines": lines,
+                "user_id": user_id,
+                "quantity": quantity,
+            },
+        )
+        return sorted(result.scalars())

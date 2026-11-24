@@ -43,6 +43,9 @@ Money = Annotated[
     Field(examples=["129.99"]),
 ]
 
+# Body ids are strict integers: `true`, `"5"` or `5.0` are rejected instead of being coerced.
+EntityId = Annotated[int, Field(strict=True, gt=0, le=PG_INT_MAX)]
+
 
 class SortOrder(StrEnum):
     ASC = "asc"

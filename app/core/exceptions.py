@@ -4,6 +4,8 @@ They are deliberately HTTP-agnostic: the mapping "error category -> HTTP status"
 `app.api.errors`, so the business layer can be reused outside of the web framework.
 """
 
+from collections.abc import Sequence
+from dataclasses import asdict, dataclass
 from typing import Any, ClassVar
 
 
@@ -58,7 +60,59 @@ class ProductNotFoundError(NotFoundError):
         )
 
 
+class CartItemNotFoundError(NotFoundError):
+    code = "cart_item_not_found"
+
+    def __init__(self, product_id: int) -> None:
+        super().__init__(
+            f"Product with id {product_id} is not in the cart.", context={"product_id": product_id}
+        )
+
+
 # --------------------------------------------------------------------------- business rules
+
+
+@dataclass(frozen=True, slots=True)
+class StockShortage:
+    product_id: int
+    requested: int
+    available: int
+
+
+class InsufficientStockError(ConflictError):
+    code = "insufficient_stock"
+
+    def __init__(self, shortages: Sequence[StockShortage]) -> None:
+        summary = "; ".join(
+            f"product {s.product_id}: requested {s.requested}, available {s.available}"
+            for s in shortages
+        )
+        super().__init__(
+            f"Insufficient stock ({summary}).",
+            context={"items": [asdict(shortage) for shortage in shortages]},
+        )
+        self.shortages = tuple(shortages)
+
+
+class CartItemQuantityLimitError(ConflictError):
+    code = "cart_item_quantity_limit_exceeded"
+
+    def __init__(self, product_id: int, requested: int, limit: int) -> None:
+        super().__init__(
+            f"A cart line cannot contain more than {limit} units "
+            f"(product {product_id}: requested {requested}).",
+            context={"product_id": product_id, "requested": requested, "limit": limit},
+        )
+
+
+class CartItemsLimitError(ConflictError):
+    code = "cart_items_limit_exceeded"
+
+    def __init__(self, limit: int) -> None:
+        super().__init__(
+            f"A cart cannot contain more than {limit} different products.",
+            context={"limit": limit},
+        )
 
 
 class InvalidOrderStatusTransitionError(ConflictError):
