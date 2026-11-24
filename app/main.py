@@ -1,3 +1,6 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from app import __version__
@@ -5,6 +8,7 @@ from app.api.errors import register_exception_handlers, use_problem_json_in_open
 from app.api.router import api_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging
+from app.db.session import engine
 
 API_DESCRIPTION = """
 Backend for a simplified online shop: **products**, **cart** and **orders**.
@@ -27,6 +31,12 @@ OPENAPI_TAGS = [
 ]
 
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    yield
+    await engine.dispose()  # close pooled connections on shutdown
+
+
 def create_app() -> FastAPI:
     settings = get_settings()
     configure_logging(settings.log_level)
@@ -36,6 +46,7 @@ def create_app() -> FastAPI:
         version=__version__,
         description=API_DESCRIPTION,
         openapi_tags=OPENAPI_TAGS,
+        lifespan=lifespan,
     )
     register_exception_handlers(app)
     app.include_router(api_router)

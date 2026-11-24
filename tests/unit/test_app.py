@@ -1,8 +1,13 @@
 """Application-level behaviour that needs no database: error format, OpenAPI contract, health."""
 
+from collections.abc import AsyncIterator
+
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from app.core.exceptions import AppError
+from app.db.session import get_session
 from app.main import create_app
 
 PROBLEM_JSON = "application/problem+json"
@@ -48,3 +53,23 @@ async def test_unknown_domain_error_category_defaults_to_400() -> None:
 
     assert response.status_code == 400
     assert response.json()["code"] == "strange"
+
+
+async def test_health_returns_503_when_database_is_unreachable() -> None:
+    unreachable = create_async_engine(
+        "postgresql+asyncpg://user:password@127.0.0.1:1/db", poolclass=NullPool
+    )
+    session_factory = async_sessionmaker(unreachable)
+
+    async def broken_session() -> AsyncIterator[AsyncSession]:
+        async with session_factory() as session:
+            yield session
+
+    app = create_app()
+    app.dependency_overrides[get_session] = broken_session
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as client:
+        response = await client.get("/health")
+    await unreachable.dispose()
+
+    assert response.status_code == 503
+    assert response.json() == {"status": "unavailable", "database": "unavailable"}

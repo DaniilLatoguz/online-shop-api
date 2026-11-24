@@ -4,4 +4,5 @@ from pydantic import BaseModel
 
 
 class HealthRead(BaseModel):
-    status: Literal["ok"]
+    status: Literal["ok", "unavailable"]
+    database: Literal["ok", "unavailable"]
