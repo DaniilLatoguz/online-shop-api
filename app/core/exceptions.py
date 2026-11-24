@@ -37,3 +37,16 @@ class BusinessRuleViolationError(AppError):
     """The request breaks a business rule that does not depend on concurrent state."""
 
     code = "business_rule_violation"
+
+
+# --------------------------------------------------------------------------- business rules
+
+
+class InvalidOrderStatusTransitionError(ConflictError):
+    code = "invalid_order_status_transition"
+
+    def __init__(self, order_id: int, current: str, target: str) -> None:
+        super().__init__(
+            f"Order {order_id} cannot change status from '{current}' to '{target}'.",
+            context={"order_id": order_id, "current_status": current, "target_status": target},
+        )
