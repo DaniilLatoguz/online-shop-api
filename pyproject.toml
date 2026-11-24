@@ -1,0 +1,98 @@
+[project]
+name = "online-shop-api"
+version = "1.0.0"
+description = "REST API for a simplified online shop: products, cart and orders (FastAPI, SQLAlchemy 2.0, PostgreSQL)."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "alembic>=1.20",
+    "asyncpg>=0.32",
+    "fastapi>=0.165",
+    "pydantic>=2.14,<3",
+    "pydantic-settings>=2.16",
+    "sqlalchemy[asyncio]>=2.0.58,<2.1",
+    "uvicorn[standard]>=0.54",
+]
+
+[dependency-groups]
+test = [
+    "httpx>=0.28",
+    "pytest>=9.2",
+    "pytest-asyncio>=1.5",
+    "pytest-cov>=7.0",
+]
+lint = [
+    "mypy>=2.4",
+    "ruff>=0.17",
+]
+# `uv sync` installs the dev group by default: everything needed for local development.
+dev = [
+    { include-group = "test" },
+    { include-group = "lint" },
+]
+
+[tool.uv]
+# This is an application, not a library: uv installs only its dependencies.
+package = false
+
+# --------------------------------------------------------------------------- ruff
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = ["alembic/versions"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes
+    "I",        # isort
+    "N",        # pep8-naming
+    "UP",       # pyupgrade
+    "B",        # flake8-bugbear
+    "C4",       # flake8-comprehensions
+    "SIM",      # flake8-simplify
+    "RET",      # flake8-return
+    "PT",       # flake8-pytest-style
+    "ASYNC",    # flake8-async
+    "FAST",     # FastAPI-specific rules
+    "RUF",      # ruff-specific rules
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+# The local alembic/ folder (migrations) must not make the alembic package look first-party.
+known-third-party = ["alembic"]
+
+# --------------------------------------------------------------------------- mypy
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+plugins = ["pydantic.mypy"]
+files = ["app", "tests"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+
+# --------------------------------------------------------------------------- pytest
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --strict-config"
+pythonpath = ["."]
+asyncio_mode = "auto"
+# One event loop for the whole run: the async engine/connection pool is created once.
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+
+[tool.coverage.run]
+source = ["app"]
+branch = true
+# SQLAlchemy's asyncio layer runs ORM code inside greenlets: trace them too.
+concurrency = ["greenlet", "thread"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError"]
