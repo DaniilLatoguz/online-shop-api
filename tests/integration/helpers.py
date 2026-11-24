@@ -27,3 +27,25 @@ async def create_user(client: AsyncClient, name: str = "Alice") -> dict[str, Any
     response = await client.post("/users", json={"name": name})
     assert response.status_code == 201, response.text
     return json_of(response)
+
+
+async def create_product(
+    client: AsyncClient,
+    *,
+    name: str = "Product",
+    price: str = "10.00",
+    stock: int = 10,
+    description: str | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {"name": name, "price": price, "stock": stock}
+    if description is not None:
+        payload["description"] = description
+    response = await client.post("/products", json=payload)
+    assert response.status_code == 201, response.text
+    return json_of(response)
+
+
+async def get_product(client: AsyncClient, product_id: int) -> dict[str, Any]:
+    response = await client.get(f"/products/{product_id}")
+    assert response.status_code == 200, response.text
+    return json_of(response)

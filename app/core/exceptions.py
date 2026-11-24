@@ -49,6 +49,15 @@ class UserNotFoundError(NotFoundError):
         super().__init__(f"User with id {user_id} was not found.", context={"user_id": user_id})
 
 
+class ProductNotFoundError(NotFoundError):
+    code = "product_not_found"
+
+    def __init__(self, product_id: int) -> None:
+        super().__init__(
+            f"Product with id {product_id} was not found.", context={"product_id": product_id}
+        )
+
+
 # --------------------------------------------------------------------------- business rules
 
 
