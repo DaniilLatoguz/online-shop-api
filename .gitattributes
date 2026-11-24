@@ -1,0 +1,2 @@
+# Normalize line endings: files checked out on Windows still have LF inside the Linux containers.
+* text=auto eol=lf
