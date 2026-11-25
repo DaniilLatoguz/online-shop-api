@@ -1,6 +1,7 @@
 """Application-level behaviour that needs no database: error format, OpenAPI contract, health."""
 
 from collections.abc import AsyncIterator
+from typing import Any
 
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -82,6 +83,25 @@ async def test_health_returns_503_when_database_is_unreachable() -> None:
 
     assert response.status_code == 503
     assert response.json() == {"status": "unavailable", "database": "unavailable"}
+
+
+def test_openapi_documents_statuses_header_and_problem_media_type() -> None:
+    schema: dict[str, Any] = create_app().openapi()
+    add_item = schema["paths"]["/cart/items"]["post"]
+
+    assert set(add_item["responses"]) == {"200", "201", "404", "409", "422"}
+    assert set(add_item["responses"]["409"]["content"]) == {PROBLEM_JSON}
+    assert set(add_item["responses"]["201"]["content"]) == {"application/json"}
+    assert [p["name"] for p in add_item["parameters"] if p["in"] == "header"] == ["X-User-Id"]
+    # Validation errors are documented with the real format, not FastAPI's default schema.
+    assert "HTTPValidationError" not in schema["components"]["schemas"]
+    assert set(schema["paths"]["/orders"]["post"]["responses"]) == {
+        "201",
+        "400",
+        "404",
+        "409",
+        "422",
+    }
 
 
 def test_openapi_offers_null_in_product_patch_only_where_it_is_accepted() -> None:

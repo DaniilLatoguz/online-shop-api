@@ -75,6 +75,10 @@ async def get_product(client: AsyncClient, product_id: int) -> dict[str, Any]:
     return json_of(response)
 
 
+async def checkout(client: AsyncClient, user_id: int) -> Response:
+    return await client.post("/orders", headers=as_user(user_id))
+
+
 async def fill_cart(
     engine: AsyncEngine, user_id: int, *, lines: int, quantity: int = 1, price: str = "1.00"
 ) -> list[int]:

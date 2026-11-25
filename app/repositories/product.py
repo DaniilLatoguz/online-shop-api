@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 
 from sqlalchemy import ColumnElement, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -70,3 +70,9 @@ class ProductRepository:
     async def count(self, params: ProductListParams) -> int:
         stmt = select(func.count()).select_from(Product).where(*_filter_conditions(params))
         return (await self._session.execute(stmt)).scalar_one()
+
+    async def get_many(self, product_ids: Iterable[int]) -> dict[int, Product]:
+        """The given products, by id."""
+        stmt = select(Product).where(Product.id.in_(set(product_ids)))
+        products = (await self._session.scalars(stmt)).all()
+        return {product.id: product for product in products}

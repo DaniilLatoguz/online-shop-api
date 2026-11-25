@@ -69,7 +69,21 @@ class CartItemNotFoundError(NotFoundError):
         )
 
 
+class OrderNotFoundError(NotFoundError):
+    code = "order_not_found"
+
+    def __init__(self, order_id: int) -> None:
+        super().__init__(f"Order with id {order_id} was not found.", context={"order_id": order_id})
+
+
 # --------------------------------------------------------------------------- business rules
+
+
+class EmptyCartError(BusinessRuleViolationError):
+    code = "cart_empty"
+
+    def __init__(self) -> None:
+        super().__init__("Cannot create an order: the cart is empty.")
 
 
 @dataclass(frozen=True, slots=True)

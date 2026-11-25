@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.constants import PG_INT_MAX
 from app.db.session import get_session
 from app.models import User
-from app.services import CartService, ProductService, UserService
+from app.services import CartService, OrderService, ProductService, UserService
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
@@ -29,9 +29,14 @@ async def get_cart_service(session: SessionDep) -> CartService:
     return CartService(session)
 
 
+async def get_order_service(session: SessionDep) -> OrderService:
+    return OrderService(session)
+
+
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 ProductServiceDep = Annotated[ProductService, Depends(get_product_service)]
 CartServiceDep = Annotated[CartService, Depends(get_cart_service)]
+OrderServiceDep = Annotated[OrderService, Depends(get_order_service)]
 
 
 async def get_current_user(
@@ -58,3 +63,4 @@ CurrentUserDep = Annotated[User, Depends(get_current_user)]
 # Ids must fit PostgreSQL INTEGER: a larger value would otherwise reach the database and fail.
 UserIdPath = Annotated[int, Path(gt=0, le=PG_INT_MAX, description="User id.")]
 ProductIdPath = Annotated[int, Path(gt=0, le=PG_INT_MAX, description="Product id.")]
+OrderIdPath = Annotated[int, Path(gt=0, le=PG_INT_MAX, description="Order id.")]

@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -46,6 +46,12 @@ class CartRepository:
             .returning(CartItem.product_id)
         )
         return (await self._session.execute(stmt)).scalar_one_or_none() is not None
+
+    async def delete_items(self, user_id: int, product_ids: Iterable[int]) -> None:
+        stmt = delete(CartItem).where(
+            CartItem.user_id == user_id, CartItem.product_id.in_(set(product_ids))
+        )
+        await self._session.execute(stmt)
 
     async def clear(self, user_id: int) -> None:
         await self._session.execute(delete(CartItem).where(CartItem.user_id == user_id))
