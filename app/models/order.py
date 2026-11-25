@@ -102,6 +102,9 @@ class OrderItem(Base):
     product_name: Mapped[str] = mapped_column(String(NAME_MAX_LENGTH))
     unit_price: Mapped[Decimal] = mapped_column(Numeric(MONEY_PRECISION, MONEY_SCALE))
     quantity: Mapped[int]
+    # Whether checkout wrote this line off the product's stock. Cancellation returns only what
+    # was written off, even if stock tracking was switched on or off after the order was placed.
+    stock_deducted: Mapped[bool]
 
     order: Mapped[Order] = relationship(back_populates="items", lazy="raise")
 

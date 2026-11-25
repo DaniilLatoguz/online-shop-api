@@ -34,7 +34,8 @@ def _filter_conditions(params: ProductListParams) -> list[ColumnElement[bool]]:
     if params.max_price is not None:
         conditions.append(Product.price <= params.max_price)
     if params.in_stock is True:
-        conditions.append(Product.stock > 0)
+        # A product that does not track stock (NULL) is always available.
+        conditions.append(or_(Product.stock.is_(None), Product.stock > 0))
     elif params.in_stock is False:
         conditions.append(Product.stock == 0)
     return conditions

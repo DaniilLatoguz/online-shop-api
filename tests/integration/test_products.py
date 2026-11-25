@@ -32,7 +32,7 @@ async def test_create_product_defaults_and_money_normalization(client: AsyncClie
     body = json_of(response)
     assert body["price"] == "10.00"
     assert body["description"] is None
-    assert body["stock"] == 0  # not for sale until stock is set explicitly
+    assert body["stock"] is None  # stock is not tracked
 
 
 @pytest.mark.parametrize(
@@ -111,6 +111,24 @@ async def test_update_product_can_clear_description(client: AsyncClient) -> None
     assert json_of(response)["description"] is None
 
 
+async def test_update_product_starts_tracking_stock(client: AsyncClient) -> None:
+    product = await create_product(client, stock=None)
+
+    response = await client.patch(f"/products/{product['id']}", json={"stock": 3})
+
+    assert response.status_code == 200
+    assert json_of(response)["stock"] == 3
+
+
+async def test_update_product_stops_tracking_stock(client: AsyncClient) -> None:
+    product = await create_product(client, stock=5)
+
+    response = await client.patch(f"/products/{product['id']}", json={"stock": None})
+
+    assert response.status_code == 200
+    assert json_of(response)["stock"] is None
+
+
 async def test_update_product_with_empty_body_is_a_no_op(client: AsyncClient) -> None:
     product = await create_product(client)
 
@@ -125,7 +143,6 @@ async def test_update_product_with_empty_body_is_a_no_op(client: AsyncClient) ->
     [
         pytest.param({"name": None}, "null_not_allowed", id="null-name"),
         pytest.param({"price": None}, "null_not_allowed", id="null-price"),
-        pytest.param({"stock": None}, "null_not_allowed", id="null-stock"),
         pytest.param({"price": 0}, "greater_than", id="zero-price"),
         pytest.param({"stock": -1}, "greater_than_equal", id="negative-stock"),
         pytest.param({"name": "  "}, "string_too_short", id="blank-name"),
@@ -253,6 +270,19 @@ async def test_list_products_total_respects_filters(
 
     assert len(body["items"]) == 1
     assert body["total"] == 4
+
+
+async def test_in_stock_filter_treats_untracked_products_as_available(
+    client: AsyncClient,
+) -> None:
+    await create_product(client, name="Tracked", stock=5)
+    await create_product(client, name="Sold out", stock=0)
+    await create_product(client, name="Untracked", stock=None)
+
+    available = await list_names(client, "?in_stock=true&sort_by=name&sort_order=asc")
+
+    assert available == ["Tracked", "Untracked"]
+    assert await list_names(client, "?in_stock=false") == ["Sold out"]
 
 
 @pytest.mark.parametrize(

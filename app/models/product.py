@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, Identity, Index, Numeric, String, Text, text
+from sqlalchemy import CheckConstraint, Identity, Index, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.constants import MONEY_PRECISION, MONEY_SCALE, NAME_MAX_LENGTH
@@ -13,6 +13,7 @@ class Product(TimestampMixin, Base):
     __table_args__ = (
         # The API validates these too; the constraints are the last line of defence.
         CheckConstraint("price > 0", name="price_positive"),
+        # NULL passes a CHECK, so the constraint applies only to products that track stock.
         CheckConstraint("stock >= 0", name="stock_non_negative"),
         # Support filtering and sorting of the product list.
         Index("ix_products_created_at", "created_at"),
@@ -24,4 +25,5 @@ class Product(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(NAME_MAX_LENGTH))
     description: Mapped[str | None] = mapped_column(Text)
     price: Mapped[Decimal] = mapped_column(Numeric(MONEY_PRECISION, MONEY_SCALE))
-    stock: Mapped[int] = mapped_column(server_default=text("0"))
+    # NULL: the product does not track stock (never checked, written off or returned).
+    stock: Mapped[int | None]

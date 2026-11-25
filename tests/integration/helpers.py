@@ -6,8 +6,6 @@ from httpx import AsyncClient, Response
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from app.core.constants import MAX_ITEM_QUANTITY
-
 PROBLEM_JSON = "application/problem+json"
 
 
@@ -42,7 +40,7 @@ async def create_product(
     *,
     name: str = "Product",
     price: str = "10.00",
-    stock: int = 10,
+    stock: int | None = 10,
     description: str | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {"name": name, "price": price, "stock": stock}
@@ -82,8 +80,8 @@ async def checkout(client: AsyncClient, user_id: int) -> Response:
 async def fill_cart(
     engine: AsyncEngine, user_id: int, *, lines: int, quantity: int = 1, price: str = "1.00"
 ) -> list[int]:
-    """Create `lines` products (each with stock for a full cart line), put each into the user's
-    cart and return their ids.
+    """Create `lines` products (without stock tracking), put each into the user's cart and
+    return their ids.
 
     Bulk setup goes through SQL: hundreds of API calls would only slow the suite down.
     """
@@ -91,8 +89,8 @@ async def fill_cart(
         result = await connection.execute(
             text(
                 "WITH created AS ("
-                "  INSERT INTO products (name, price, stock)"
-                "  SELECT 'Bulk product ' || n, CAST(:price AS NUMERIC), :stock"
+                "  INSERT INTO products (name, price)"
+                "  SELECT 'Bulk product ' || n, CAST(:price AS NUMERIC)"
                 "  FROM generate_series(1, :lines) AS n"
                 "  RETURNING id"
                 ") "
@@ -100,12 +98,6 @@ async def fill_cart(
                 "SELECT :user_id, id, :quantity FROM created "
                 "RETURNING product_id"
             ),
-            {
-                "price": price,
-                "stock": MAX_ITEM_QUANTITY,
-                "lines": lines,
-                "user_id": user_id,
-                "quantity": quantity,
-            },
+            {"price": price, "lines": lines, "user_id": user_id, "quantity": quantity},
         )
         return sorted(result.scalars())

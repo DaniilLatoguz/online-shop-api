@@ -25,7 +25,15 @@ from app.schemas.common import (
 
 ProductName = Annotated[str, Field(min_length=1, max_length=NAME_MAX_LENGTH)]
 ProductDescription = Annotated[str, Field(max_length=DESCRIPTION_MAX_LENGTH)]
-Stock = Annotated[int, Field(strict=True, ge=0, le=PG_INT_MAX, description="Units in stock.")]
+Stock = Annotated[
+    int,
+    Field(
+        strict=True,
+        ge=0,
+        le=PG_INT_MAX,
+        description="Units in stock; null means the product does not track stock.",
+    ),
+]
 
 
 class ProductCreate(RequestSchema):
@@ -45,8 +53,8 @@ class ProductCreate(RequestSchema):
     name: ProductName
     description: ProductDescription | None = None
     price: Price
-    # A product without explicit stock is not available for sale (fail-safe default).
-    stock: Stock = 0
+    # Omitted or null: stock is not tracked, the product is always available.
+    stock: Stock | None = None
 
 
 class ProductUpdate(RequestSchema):
@@ -54,18 +62,19 @@ class ProductUpdate(RequestSchema):
 
     model_config = ConfigDict(json_schema_extra={"examples": [{"price": "119.99", "stock": 40}]})
 
-    # name, price and stock may be omitted but not set to null (see the validator below), so
+    # name and price may be omitted but not set to null (see the validator below), so
     # `SkipJsonSchema[None]` keeps null out of their OpenAPI schema; None stays the Python default.
     name: ProductName | SkipJsonSchema[None] = None
     description: ProductDescription | None = None
     price: Price | SkipJsonSchema[None] = None
-    stock: Stock | SkipJsonSchema[None] = None
+    stock: Stock | None = None
 
-    @field_validator("name", "price", "stock", mode="before")
+    @field_validator("name", "price", mode="before")
     @classmethod
     def _reject_explicit_null(cls, value: object) -> object:
         # Omitting a field means "keep it"; sending null for a required column is an error.
         # (Validators do not run for omitted fields, so this only sees values that were sent.)
+        # null IS valid for description (clears it) and stock (stops tracking stock).
         if value is None:
             raise PydanticCustomError("null_not_allowed", "Field cannot be null")
         return value
@@ -76,7 +85,7 @@ class ProductRead(ResponseSchema):
     name: str
     description: str | None
     price: Money
-    stock: int
+    stock: int | None = Field(description="Units in stock; null - stock is not tracked.")
     created_at: datetime
     updated_at: datetime
 
@@ -104,7 +113,8 @@ class ProductListParams(PaginationParams):
     )
     in_stock: bool | None = Field(
         default=None,
-        description="`true` - only products with stock > 0, `false` - only sold-out products.",
+        description="`true` - available products (stock > 0 or stock not tracked), "
+        "`false` - sold-out products (stock = 0).",
     )
     sort_by: ProductSortField = ProductSortField.CREATED_AT
     sort_order: SortOrder = SortOrder.DESC

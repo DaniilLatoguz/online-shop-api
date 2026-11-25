@@ -271,6 +271,52 @@ async def test_cancel_order_returns_items_to_stock(client: AsyncClient) -> None:
     assert (await get_product(client, second["id"]))["stock"] == 5
 
 
+async def test_untracked_stock_is_not_written_off_or_returned(client: AsyncClient) -> None:
+    user = await create_user(client)
+    tracked = await create_product(client, name="Tracked", stock=5)
+    untracked = await create_product(client, name="Untracked", stock=None)
+    order = await place_order(client, user["id"], (tracked["id"], 2), (untracked["id"], 7))
+    stock_after_checkout = [
+        (await get_product(client, product["id"]))["stock"] for product in (tracked, untracked)
+    ]
+
+    response = await client.post(f"/orders/{order['id']}/cancel", headers=as_user(user["id"]))
+
+    assert response.status_code == 200
+    assert stock_after_checkout == [3, None]
+    assert (await get_product(client, tracked["id"]))["stock"] == 5
+    assert (await get_product(client, untracked["id"]))["stock"] is None
+
+
+async def test_cancel_does_not_return_stock_that_was_never_written_off(
+    client: AsyncClient,
+) -> None:
+    user = await create_user(client)
+    product = await create_product(client, stock=None)
+    order = await place_order(client, user["id"], (product["id"], 2))
+    await client.patch(f"/products/{product['id']}", json={"stock": 10})  # tracking switched on
+
+    response = await client.post(f"/orders/{order['id']}/cancel", headers=as_user(user["id"]))
+
+    assert response.status_code == 200
+    assert (await get_product(client, product["id"]))["stock"] == 10
+
+
+async def test_cancel_after_tracking_was_switched_off_keeps_stock_untracked(
+    client: AsyncClient,
+) -> None:
+    user = await create_user(client)
+    product = await create_product(client, stock=5)
+    order = await place_order(client, user["id"], (product["id"], 2))
+    await client.patch(f"/products/{product['id']}", json={"stock": None})  # tracking switched off
+
+    response = await client.post(f"/orders/{order['id']}/cancel", headers=as_user(user["id"]))
+
+    assert response.status_code == 200
+    assert json_of(response)["status"] == "cancelled"
+    assert (await get_product(client, product["id"]))["stock"] is None
+
+
 @pytest.mark.parametrize(
     ("first_action", "second_action"),
     [

@@ -72,3 +72,22 @@ async def test_add_to_cart_and_place_order(client: AsyncClient) -> None:
     assert history["items"][0]["id"] == order["id"]
     stored = json_of(await client.get(f"/orders/{order['id']}", headers=as_user(user["id"])))
     assert stored == order
+
+
+async def test_product_with_only_task_fields_can_be_ordered(client: AsyncClient) -> None:
+    """A product created with only name, description and price (the fields of the task)
+    does not track stock: it can be added to the cart and ordered."""
+    user = await create_user(client)
+    response = await client.post(
+        "/products", json={"name": "E-book", "description": "PDF, 320 pages", "price": "9.99"}
+    )
+    assert response.status_code == 201, response.text
+    product = json_of(response)
+    assert product["stock"] is None  # stock is not tracked
+
+    assert (await add_to_cart(client, user["id"], product["id"], quantity=3)).status_code == 201
+    response = await checkout(client, user["id"])
+
+    assert response.status_code == 201, response.text
+    assert json_of(response)["total_amount"] == "29.97"
+    assert (await get_product(client, product["id"]))["stock"] is None  # nothing written off

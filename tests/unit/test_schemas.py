@@ -35,13 +35,19 @@ def test_product_name_is_stripped_and_required() -> None:
         ProductCreate.model_validate({"name": "   ", "price": 1})
 
 
+def test_stock_is_optional_and_null_means_not_tracked() -> None:
+    assert ProductCreate.model_validate({"name": "X", "price": 1}).stock is None
+    assert ProductCreate.model_validate({"name": "X", "price": 1, "stock": None}).stock is None
+    assert ProductCreate.model_validate({"name": "X", "price": 1, "stock": 0}).stock == 0
+
+
 def test_update_keeps_track_of_sent_fields_only() -> None:
     update = ProductUpdate.model_validate({"price": "5"})
 
     assert update.model_dump(exclude_unset=True) == {"price": Decimal("5.00")}
 
 
-@pytest.mark.parametrize("field", ["name", "price", "stock"])
+@pytest.mark.parametrize("field", ["name", "price"])
 def test_update_rejects_null_for_required_columns(field: str) -> None:
     with pytest.raises(ValidationError) as exc_info:
         ProductUpdate.model_validate({field: None})
@@ -49,10 +55,12 @@ def test_update_rejects_null_for_required_columns(field: str) -> None:
     assert exc_info.value.errors()[0]["type"] == "null_not_allowed"
 
 
-def test_update_allows_clearing_the_description() -> None:
-    update = ProductUpdate.model_validate({"description": None})
+@pytest.mark.parametrize("field", ["description", "stock"])
+def test_update_accepts_null_where_it_has_a_meaning(field: str) -> None:
+    # description: null clears the text; stock: null stops tracking stock.
+    update = ProductUpdate.model_validate({field: None})
 
-    assert update.model_dump(exclude_unset=True) == {"description": None}
+    assert update.model_dump(exclude_unset=True) == {field: None}
 
 
 def test_list_params_reject_inverted_price_range() -> None:

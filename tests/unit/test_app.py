@@ -105,8 +105,8 @@ def test_openapi_documents_statuses_header_and_problem_media_type() -> None:
 
 
 def test_openapi_offers_null_in_product_patch_only_where_it_is_accepted() -> None:
-    # PATCH /products rejects null for name, price and stock (422), so the schema must not offer
-    # it to generated clients. For description null is valid: it clears the text.
+    # PATCH /products rejects null for name and price (422), so the schema must not offer it
+    # to generated clients. For description (clears it) and stock (stops tracking) null is valid.
     properties = create_app().openapi()["components"]["schemas"]["ProductUpdate"]["properties"]
 
     nullable = {
@@ -114,4 +114,4 @@ def test_openapi_offers_null_in_product_patch_only_where_it_is_accepted() -> Non
         for field, schema in properties.items()
     }
 
-    assert nullable == {"name": False, "description": True, "price": False, "stock": False}
+    assert nullable == {"name": False, "description": True, "price": False, "stock": True}

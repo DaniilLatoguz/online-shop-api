@@ -41,12 +41,13 @@ class OrderService:
 
         # 2. Lock the products and re-validate stock: the cart does not reserve stock, so it may
         #    have changed since the items were added. All shortages are reported at once.
+        #    Products with stock = NULL do not track stock and are always available.
         products = await self._products.lock_many(item.product_id for item in cart_items)
-        shortages = [
-            StockShortage(item.product_id, item.quantity, products[item.product_id].stock)
-            for item in cart_items
-            if item.quantity > products[item.product_id].stock
-        ]
+        shortages: list[StockShortage] = []
+        for item in cart_items:
+            available = products[item.product_id].stock
+            if available is not None and item.quantity > available:
+                shortages.append(StockShortage(item.product_id, item.quantity, available))
         if shortages:
             raise InsufficientStockError(shortages)
 
@@ -55,13 +56,16 @@ class OrderService:
         order_items: list[OrderItem] = []
         for cart_item in cart_items:
             product = products[cart_item.product_id]
-            product.stock -= cart_item.quantity
+            stock_deducted = product.stock is not None  # untracked stock is not written off
+            if product.stock is not None:
+                product.stock -= cart_item.quantity
             order_items.append(
                 OrderItem(
                     product_id=product.id,
                     product_name=product.name,
                     unit_price=product.price,
                     quantity=cart_item.quantity,
+                    stock_deducted=stock_deducted,
                 )
             )
         order = Order(
@@ -101,13 +105,16 @@ class OrderService:
         return order
 
     async def cancel(self, user_id: int, order_id: int) -> Order:
-        """Cancel an unpaid order and return its units to stock."""
+        """Cancel an unpaid order and return its units to stock (for products that track it)."""
         order = await self._get_for_update(user_id, order_id)
         order.transition_to(OrderStatus.CANCELLED)
         # Same lock order as checkout (products by ascending id) to stay deadlock-free.
         products = await self._products.lock_many(item.product_id for item in order.items)
         for item in order.items:
-            products[item.product_id].stock += item.quantity
+            product = products[item.product_id]
+            # Return only what checkout wrote off, and only while the product still tracks stock.
+            if item.stock_deducted and product.stock is not None:
+                product.stock += item.quantity
         await self._session.commit()
         logger.info("Order %s cancelled, stock restored", order.id)
         return order

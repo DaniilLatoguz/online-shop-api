@@ -201,6 +201,22 @@ async def test_merged_quantity_cannot_exceed_line_limit(client: AsyncClient) -> 
     assert (await get_cart(client, user["id"]))["items"][0]["quantity"] == MAX_ITEM_QUANTITY
 
 
+async def test_untracked_stock_is_not_checked_but_line_limit_applies(client: AsyncClient) -> None:
+    user = await create_user(client)
+    product = await create_product(client, stock=None)
+
+    first = await add_to_cart(client, user["id"], product["id"], quantity=MAX_ITEM_QUANTITY)
+    over_limit = await add_to_cart(client, user["id"], product["id"], quantity=1)
+    changed = await client.patch(
+        f"/cart/items/{product['id']}", json={"quantity": 500}, headers=as_user(user["id"])
+    )
+
+    assert first.status_code == 201
+    assert_problem(over_limit, 409, "cart_item_quantity_limit_exceeded")
+    assert changed.status_code == 200
+    assert json_of(changed)["items"][0]["quantity"] == 500
+
+
 # --------------------------------------------------------------------------- cart size limit
 
 

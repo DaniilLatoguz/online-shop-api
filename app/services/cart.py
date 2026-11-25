@@ -38,11 +38,12 @@ def ensure_quantity_available(product: Product, quantity: int) -> None:
     """A cart line may not exceed the per-line limit or the units currently in stock.
 
     The cart does not reserve stock: this check gives early feedback, and checkout validates
-    the stock again under row locks.
+    the stock again under row locks. A product with stock = NULL does not track stock, so only
+    the per-line limit applies to it.
     """
     if quantity > MAX_ITEM_QUANTITY:
         raise CartItemQuantityLimitError(product.id, quantity, MAX_ITEM_QUANTITY)
-    if quantity > product.stock:
+    if product.stock is not None and quantity > product.stock:
         raise InsufficientStockError([StockShortage(product.id, quantity, product.stock)])
 
 
