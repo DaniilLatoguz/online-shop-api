@@ -60,3 +60,32 @@ jobs:
       - name: Migrations apply and match the models
         run: uv run alembic upgrade head && uv run alembic check
       - run: uv run pytest --cov --cov-report=term-missing
+
+  docker:
+    name: Docker Compose (build, start, smoke test, tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build images
+        run: docker compose --profile test build
+      - name: Start the stack
+        run: docker compose up --detach
+      - name: Wait for the API
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://localhost:8000/health; then exit 0; fi
+            sleep 2
+          done
+          exit 1
+      - name: Smoke test
+        run: |
+          curl --fail --silent "http://localhost:8000/products?limit=1"
+          curl --fail --silent --header "X-User-Id: 1" http://localhost:8000/cart
+      - name: Run the test suite in Docker
+        run: docker compose run --rm tests
+      - name: Show logs
+        if: failure()
+        run: docker compose logs
+      - name: Tear down
+        if: always()
+        run: docker compose down --volumes
