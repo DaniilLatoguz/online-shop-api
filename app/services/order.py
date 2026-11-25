@@ -30,16 +30,18 @@ class OrderService:
 
         Either everything happens (order created, stock written off, cart emptied) or nothing.
         """
-        # 1. Read the cart lines.
-        cart_items = await self._cart.list_items(user_id)
+        # 1. Lock the cart lines. A concurrent checkout of the same cart waits here and then sees
+        #    an empty cart, so a double-submitted request cannot produce two orders.
+        cart_items = await self._cart.lock_items(user_id)
         if not cart_items:
             raise EmptyCartError()
-        # The line limit keeps the order total within NUMERIC(16, 2).
+        # The line limit keeps the order total within NUMERIC(16, 2). Adding to the cart checks
+        # it too, but only here, under the lock, is the number of lines final.
         ensure_cart_items_limit(len(cart_items))
 
-        # 2. Re-validate stock: the cart does not reserve stock, so it may have changed since the
-        #    items were added. All shortages are reported at once.
-        products = await self._products.get_many(item.product_id for item in cart_items)
+        # 2. Lock the products and re-validate stock: the cart does not reserve stock, so it may
+        #    have changed since the items were added. All shortages are reported at once.
+        products = await self._products.lock_many(item.product_id for item in cart_items)
         shortages = [
             StockShortage(item.product_id, item.quantity, products[item.product_id].stock)
             for item in cart_items
@@ -92,7 +94,7 @@ class OrderService:
 
     async def pay(self, user_id: int, order_id: int) -> Order:
         """Mark an order as paid (stands in for a confirmation from a payment provider)."""
-        order = await self.get(user_id, order_id)
+        order = await self._get_for_update(user_id, order_id)
         order.transition_to(OrderStatus.PAID)
         await self._session.commit()
         logger.info("Order %s paid", order.id)
@@ -100,11 +102,20 @@ class OrderService:
 
     async def cancel(self, user_id: int, order_id: int) -> Order:
         """Cancel an unpaid order and return its units to stock."""
-        order = await self.get(user_id, order_id)
+        order = await self._get_for_update(user_id, order_id)
         order.transition_to(OrderStatus.CANCELLED)
-        products = await self._products.get_many(item.product_id for item in order.items)
+        # Same lock order as checkout (products by ascending id) to stay deadlock-free.
+        products = await self._products.lock_many(item.product_id for item in order.items)
         for item in order.items:
             products[item.product_id].stock += item.quantity
         await self._session.commit()
         logger.info("Order %s cancelled, stock restored", order.id)
+        return order
+
+    async def _get_for_update(self, user_id: int, order_id: int) -> Order:
+        # The row lock serializes concurrent status changes of the same order
+        # (e.g. "pay" and "cancel" at the same time: the second one gets 409).
+        order = await self._orders.get_for_user(order_id, user_id, for_update=True)
+        if order is None:
+            raise OrderNotFoundError(order_id)
         return order

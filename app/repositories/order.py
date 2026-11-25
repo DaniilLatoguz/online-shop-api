@@ -22,7 +22,9 @@ class OrderRepository:
     def add(self, order: Order) -> None:
         self._session.add(order)
 
-    async def get_for_user(self, order_id: int, user_id: int) -> Order | None:
+    async def get_for_user(
+        self, order_id: int, user_id: int, *, for_update: bool = False
+    ) -> Order | None:
         """An order with its items, only if it belongs to the user.
 
         Filtering by owner in the query means another user's order is simply "not found":
@@ -33,6 +35,8 @@ class OrderRepository:
             .where(Order.id == order_id, Order.user_id == user_id)
             .options(selectinload(Order.items))
         )
+        if for_update:
+            stmt = stmt.with_for_update(of=Order).execution_options(populate_existing=True)
         return (await self._session.execute(stmt)).scalar_one_or_none()
 
     async def list_for_user(self, user_id: int, params: OrderListParams) -> Sequence[Order]:

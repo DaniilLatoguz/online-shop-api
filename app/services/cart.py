@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.constants import MAX_CART_ITEMS, MAX_ITEM_QUANTITY
 from app.core.exceptions import (
+    AppError,
     CartItemNotFoundError,
     CartItemQuantityLimitError,
     CartItemsLimitError,
@@ -37,7 +38,7 @@ def ensure_quantity_available(product: Product, quantity: int) -> None:
     """A cart line may not exceed the per-line limit or the units currently in stock.
 
     The cart does not reserve stock: this check gives early feedback, and checkout validates
-    the stock again.
+    the stock again under row locks.
     """
     if quantity > MAX_ITEM_QUANTITY:
         raise CartItemQuantityLimitError(product.id, quantity, MAX_ITEM_QUANTITY)
@@ -49,7 +50,8 @@ def ensure_cart_items_limit(items_count: int) -> None:
     """A cart may hold at most MAX_CART_ITEMS different products.
 
     Together with MAX_ITEM_QUANTITY this bounds the order total, so it always fits the money
-    column. Adding a new line checks the limit early; checkout checks it again.
+    column. Adding a new line checks the limit early; checkout checks it again under row locks
+    (concurrent requests may both pass the early check).
     """
     if items_count > MAX_CART_ITEMS:
         raise CartItemsLimitError(MAX_CART_ITEMS)
@@ -73,24 +75,25 @@ class CartService:
         if product is None:
             raise ProductNotFoundError(product_id)
 
-        # Read, then write. Simple, but two concurrent requests for the same product can both
-        # find no line here and both try to insert it.
-        item = await self._cart.get_item(user_id, product_id)
-        created = item is None
-        new_quantity = quantity if item is None else item.quantity + quantity
-        if created:
-            ensure_cart_items_limit(await self._cart.count_items(user_id) + 1)
-        ensure_quantity_available(product, new_quantity)
-        if item is None:
-            self._cart.add(CartItem(user_id=user_id, product_id=product_id, quantity=quantity))
-        else:
-            item.quantity = new_quantity
+        new_quantity = await self._cart.add_quantity(user_id, product_id, quantity)
+        # An existing line already had quantity >= 1 (CHECK constraint), so the resulting
+        # quantity equals the requested one only when the line has just been inserted.
+        created = new_quantity == quantity
+        try:
+            if created:
+                ensure_cart_items_limit(await self._cart.count_items(user_id))
+            ensure_quantity_available(product, new_quantity)
+        except AppError:
+            await self._session.rollback()  # undo the upsert above
+            raise
         await self._session.commit()
         return await self.get_cart(user_id), created
 
     async def update_item(self, user_id: int, product_id: int, quantity: int) -> Cart:
         """Set the quantity of a product that is already in the cart."""
-        item = await self._cart.get_item(user_id, product_id)
+        # Lock the line: a concurrent checkout either finishes first (then the line is gone and
+        # we answer 404) or waits for this update.
+        item = await self._cart.lock_item(user_id, product_id)
         if item is None:
             raise CartItemNotFoundError(product_id)
         ensure_quantity_available(item.product, quantity)

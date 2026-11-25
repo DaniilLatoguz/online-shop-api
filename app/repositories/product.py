@@ -71,8 +71,23 @@ class ProductRepository:
         stmt = select(func.count()).select_from(Product).where(*_filter_conditions(params))
         return (await self._session.execute(stmt)).scalar_one()
 
-    async def get_many(self, product_ids: Iterable[int]) -> dict[int, Product]:
-        """The given products, by id."""
-        stmt = select(Product).where(Product.id.in_(set(product_ids)))
+    async def lock_many(self, product_ids: Iterable[int]) -> dict[int, Product]:
+        """`SELECT ... FOR NO KEY UPDATE` the given products, locking rows in ascending id order.
+
+        Every transaction that locks several products does it in the same order, which rules out
+        deadlocks between concurrent checkouts and cancellations touching the same products.
+
+        The callers change only `stock`, never the key, so `NO KEY` is enough: the lock still
+        serializes all stock changes, but does not block foreign-key checks (`FOR KEY SHARE`),
+        e.g. other customers adding the product to their carts while a checkout is running.
+        """
+        stmt = (
+            select(Product)
+            .where(Product.id.in_(set(product_ids)))
+            .order_by(Product.id)
+            .with_for_update(key_share=True)  # FOR NO KEY UPDATE
+            # If a product is already in the session, overwrite it with the locked (latest) row.
+            .execution_options(populate_existing=True)
+        )
         products = (await self._session.scalars(stmt)).all()
         return {product.id: product for product in products}
